@@ -1,0 +1,10 @@
+Manifest-Version: 1.0
+Created-By: Maven Jar Plugin 3.2.0
+Build-Jdk-Spec: 11
+Implementation-Title: function-sample-aws
+Implementation-Version: 1.0.0-SNAPSHOT
+Main-Class: org.springframework.boot.loader.wrapper.ThinJarWrapper
+Start-Class: com.slongpre.lambda_demo.LambdaDemoApplication
+Spring-Boot-Version: 2.3.3.RELEASE
+Spring-Boot-Classes: 
+
