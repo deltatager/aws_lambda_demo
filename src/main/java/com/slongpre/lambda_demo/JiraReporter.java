@@ -1,12 +1,11 @@
 package com.slongpre.lambda_demo;
 
+import org.apache.commons.lang3.StringUtils;
+
 import java.time.Duration;
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class JiraReporter {
@@ -20,11 +19,13 @@ public class JiraReporter {
     }
 
     public String printReport(List<LogWorkEntry> entries) {
-        LocalDate from = parseDate(jiraConfig.getStartDate());
+        LocalDateTime from = parseDate(jiraConfig.getStartDateTime());
         final Map<String, List<LogWorkEntry>> result =
                 entries.stream()
-                        .filter(wl -> wl.getLogWorkDateTime().toLocalDate().isAfter(from))
+                        .filter(wl -> wl.getLogWorkDateTime().isAfter(from))
                         .collect(Collectors.groupingBy(LogWorkEntry::getUserName));
+
+        result.forEach((username, list) -> list.sort(Comparator.comparing(LogWorkEntry::getLogWorkDateTime)));
 
         StringBuilder sb = new StringBuilder();
         result.entrySet().forEach(e -> sb.append(printEntry(e)));
@@ -32,17 +33,18 @@ public class JiraReporter {
         return sb.toString();
     }
 
-    private LocalDate parseDate(String dateFrom) {
-        System.out.println("Date From: " + dateFrom);
-        DateTimeFormatter dtf = DateTimeFormatter.ofPattern("dd-MM-yyyy", Locale.US);
-        return LocalDate.parse(dateFrom, dtf);
+    private LocalDateTime parseDate(String dateFrom) {
+        DateTimeFormatter dtf = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm", Locale.US);
+        var date = LocalDateTime.parse(dateFrom, dtf);
+        System.out.println("Date From: " + date);
+        return date;
     }
 
     private String printEntry(Map.Entry<String, List<LogWorkEntry>> e) {
         secondsPerUser.put(e.getKey(), 0);
 
         StringBuilder sb = new StringBuilder();
-        sb.append("<html><body>");
+        sb.append("<html><body style='font-family: monospace;'>");
         sb.append(e.getKey()).append("<br/>");
         e.getValue().forEach(log -> sb.append(printEntryDetail(e.getKey(), log)));
 
@@ -57,12 +59,12 @@ public class JiraReporter {
     private String printEntryDetail(String user, LogWorkEntry log) {
         final int seconds = log.getLogWorkSeconds();
         StringBuilder sb = new StringBuilder();
-        sb.append("    ")
-                .append(log.getTaskId()).append(" ")
-                .append(log.getLogWorkDescription()).append(" ")
+        sb.append(" &emsp; ")
+                .append(StringUtils.rightPad(log.getTaskId(), 10, '_') )
+                .append(StringUtils.rightPad(prettyPrintTime(seconds), 8, '_'))
                 .append(log.getLogWorkDate()).append(" ")
-                .append(log.getUserTask()).append(" ")
-                .append(prettyPrintTime(seconds))
+                .append(StringUtils.rightPad(log.getUserTask(), 120, '_'))
+                .append(log.getLogWorkDescription())
                 .append("<br/>");
         int newSeconds = secondsPerUser.get(user) + seconds;
         secondsPerUser.put(user, newSeconds);

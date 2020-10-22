@@ -10,6 +10,6 @@ public class JiraConfig {
     private String url;
     private String project;
     private String sprintName;
-    private String startDate;
+    private String startDateTime;
     private boolean includeEmptyComments;
 }
