@@ -12,6 +12,7 @@ public class JiraReporter {
 
     private final JiraConfig jiraConfig;
     private final Map<String, Integer> secondsPerUser;
+    public static final DateTimeFormatter DTF = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm", Locale.US);
 
     public JiraReporter(JiraConfig jiraConfig) {
         this.jiraConfig = jiraConfig;
@@ -34,8 +35,7 @@ public class JiraReporter {
     }
 
     private LocalDateTime parseDate(String dateFrom) {
-        DateTimeFormatter dtf = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm", Locale.US);
-        var date = LocalDateTime.parse(dateFrom, dtf);
+        var date = LocalDateTime.parse(dateFrom, DTF);
         System.out.println("Date From: " + date);
         return date;
     }
@@ -62,7 +62,7 @@ public class JiraReporter {
         sb.append(" &emsp; ")
                 .append(StringUtils.rightPad(log.getTaskId(), 10, '_') )
                 .append(StringUtils.rightPad(prettyPrintTime(seconds), 8, '_'))
-                .append(log.getLogWorkDate()).append(" ")
+                .append(log.getLogWorkDateTime().format(DTF)).append(" ")
                 .append(StringUtils.rightPad(log.getUserTask(), 120, '_'))
                 .append(log.getLogWorkDescription())
                 .append("<br/>");
