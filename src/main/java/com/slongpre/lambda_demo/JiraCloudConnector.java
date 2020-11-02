@@ -8,19 +8,18 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.LocalDateTime;
-import java.util.Base64;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
+import java.util.*;
 
 public class JiraCloudConnector {
 
     private final JiraConfig jiraConfig;
     private final HttpClient client;
-    private final HttpRequest request;
+    private final HttpRequest issuesRequest;
+    private final Map<Integer, JSONObject> issues;
 
     public JiraCloudConnector(JiraConfig jiraConfig) {
         this.jiraConfig = jiraConfig;
+        issues = new HashMap<>();
 
         client = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
@@ -28,11 +27,11 @@ public class JiraCloudConnector {
 
         var params = ("?jql=project = \"" + jiraConfig.getProject() +
                 (jiraConfig.getSprintName() != null ? "\" AND Sprint = \"" + jiraConfig.getSprintName() : "") +
-                "\" AND timespent != 0" + "&maxResults=500&fields=id,worklog,parent,summary")
+                "\" AND timespent != 0" + "&maxResults=500&fields=id,parent,summary")
                 .replace(" ", "%20")
                 .replace("\"", "%22");
 
-        request = HttpRequest.newBuilder()
+        issuesRequest = HttpRequest.newBuilder()
                 .GET()
                 .uri(URI.create(jiraConfig.getUrl() + "/rest/api/3/search" + params))
                 .header("Authorization", "Basic "
@@ -42,10 +41,31 @@ public class JiraCloudConnector {
     }
 
 
-    public CompletableFuture<List<LogWorkEntry>> getAllIssuesAsync() {
-        return client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+    public List<LogWorkEntry> getAllWorklogs() {
+        var logs = new LinkedList<LogWorkEntry>();
+
+        client.sendAsync(issuesRequest, HttpResponse.BodyHandlers.ofString())
                 .thenApply(this::parseJsonResults)
-                .thenApply(this::parseToEntity);
+                .join()
+                .forEach(i -> {
+                    var issue = (JSONObject) i;
+                    issues.put(issue.getInt("id"), issue);
+                });
+
+        issues.keySet().forEach(issueId -> {
+            final var req = HttpRequest.newBuilder()
+                    .GET()
+                    .uri(URI.create(jiraConfig.getUrl() + "/rest/api/3/issue/" + issueId + "/worklog"))
+                    .header("Authorization", "Basic "
+                            + Base64.getEncoder().encodeToString((jiraConfig.getEmail() + ":" + jiraConfig.getToken()).getBytes()))
+                    .build();
+
+            logs.addAll(client.sendAsync(req, HttpResponse.BodyHandlers.ofString())
+                    .thenApply(this::parseToEntity)
+                    .join());
+        });
+
+        return logs;
     }
 
     private JSONArray parseJsonResults(HttpResponse<String> rb) {
@@ -63,28 +83,29 @@ public class JiraCloudConnector {
         return null;
     }
 
-    private List<LogWorkEntry> parseToEntity(JSONArray array) {
+    private List<LogWorkEntry> parseToEntity(HttpResponse<String> rb) {
         var list = new LinkedList<LogWorkEntry>();
+        var array = new JSONObject(rb.body()).getJSONArray("worklogs");
 
         array.forEach(o -> {
-            var obj = (JSONObject) o;
-            obj.getJSONObject("fields").getJSONObject("worklog").getJSONArray("worklogs").forEach(wl -> {
-                var log = (JSONObject) wl;
-                try {
-                    list.add(LogWorkEntry.builder()
-                            .taskId(obj.getString("key"))
-                            .userTask(getSummary(obj))
-                            .userName(log.getJSONObject("author").getString("displayName"))
-                            .logWorkDescription(getComment(log))
-                            .logWorkDate(log.getString("created"))
-                            .logWorkSeconds(log.getInt("timeSpentSeconds"))
-                            .logWorkDateTime(LocalDateTime.parse(log.getString("created").replaceFirst("\\.[0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]", "")))
-                            .build());
-                }
-                catch (Exception e) {
-                    System.err.println("Caught \"" + e.getMessage() + "\" on a worklog from " + obj.getString("key") + " by " + log.getJSONObject("author").getString("displayName"));
-                }
-            });
+            var log = (JSONObject) o;
+            try {
+                list.add(LogWorkEntry.builder()
+                        .taskId(issues.get(log.getInt("issueId")).getString("key"))
+                        .userTask(getSummary(issues.get(log.getInt("issueId"))))
+                        .userName(log.getJSONObject("author").getString("displayName"))
+                        .logWorkDescription(getComment(log))
+                        .logWorkDate(log.getString("created"))
+                        .logWorkSeconds(log.getInt("timeSpentSeconds"))
+                        .logWorkDateTime(LocalDateTime.parse(log.getString("created").replaceFirst(
+                                "\\.[0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]",
+                                "")))
+                        .build());
+            }
+            catch (Exception e) {
+                System.err.println("Caught \"" + e.getMessage() + "\" on a worklog from " + issues.get(log.getInt("issueId")).getString("key") + " by " + log.getJSONObject(
+                        "author").getString("displayName"));
+            }
         });
 
         return list;

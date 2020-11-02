@@ -17,8 +17,10 @@ public class LambdaDemoApplication {
 
     @Bean
     public Function<Message<JiraConfig>, Message<String>> function() {
-        return m -> MessageBuilder.createMessage(new JiraCloudConnector(m.getPayload())
-                .getAllIssuesAsync()
-                .thenApply(new JiraReporter(m.getPayload())::printReport).join(), m.getHeaders());
+        return m -> {
+            final var worklogs = new JiraCloudConnector(m.getPayload()).getAllWorklogs();
+            final var payload = new JiraReporter(m.getPayload()).printReport(worklogs);
+            return MessageBuilder.createMessage(payload, m.getHeaders());
+        };
     }
 }
