@@ -9,6 +9,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 public class JiraCloudConnector {
 
@@ -42,7 +44,7 @@ public class JiraCloudConnector {
 
 
     public List<LogWorkEntry> getAllWorklogs() {
-        var logs = new LinkedList<LogWorkEntry>();
+        var requests = new LinkedList<HttpRequest>();
 
         client.sendAsync(issuesRequest, HttpResponse.BodyHandlers.ofString())
                 .thenApply(this::parseJsonResults)
@@ -52,20 +54,22 @@ public class JiraCloudConnector {
                     issues.put(issue.getInt("id"), issue);
                 });
 
-        issues.keySet().forEach(issueId -> {
-            final var req = HttpRequest.newBuilder()
-                    .GET()
-                    .uri(URI.create(jiraConfig.getUrl() + "/rest/api/3/issue/" + issueId + "/worklog"))
-                    .header("Authorization", "Basic "
-                            + Base64.getEncoder().encodeToString((jiraConfig.getEmail() + ":" + jiraConfig.getToken()).getBytes()))
-                    .build();
+        issues.keySet().forEach(issueId -> requests.add(HttpRequest.newBuilder()
+                .GET()
+                .uri(URI.create(jiraConfig.getUrl() + "/rest/api/3/issue/" + issueId + "/worklog"))
+                .header("Authorization", "Basic "
+                        + Base64.getEncoder().encodeToString((jiraConfig.getEmail() + ":" + jiraConfig.getToken()).getBytes()))
+                .build()));
 
-            logs.addAll(client.sendAsync(req, HttpResponse.BodyHandlers.ofString())
-                    .thenApply(this::parseToEntity)
-                    .join());
-        });
+        var futureLogLists = new LinkedList<CompletableFuture<List<LogWorkEntry>>>();
+        requests.forEach(r -> futureLogLists.add(client.sendAsync(r, HttpResponse.BodyHandlers.ofString())
+                .thenApply(this::parseToEntity)));
 
-        return logs;
+        return futureLogLists.stream()
+                .map(CompletableFuture::join)
+                .flatMap(Collection::stream)
+                .collect(Collectors.toList());
+
     }
 
     private JSONArray parseJsonResults(HttpResponse<String> rb) {
